@@ -1,24 +1,10 @@
 import { useState } from "react";
-import {
-  Users,
-  Search,
-  Filter,
-  Plus,
-  MoreVertical,
-  Mail,
-  Phone,
-  Briefcase,
-  ChevronRight,
-  Download,
-  Activity,
-  UserPlus
-} from "lucide-react";
+import { Users, Search, Plus, ChevronRight, Activity, UserPlus, X } from "lucide-react";
 
 export const EmployeesPage = ({ users, onLoadLogs, onCreateUser, loading }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState("Alphabetical");
-  const [newUser, setNewUser] = useState({ username: "", password: "", name: "" });
   const [showAddModal, setShowAddModal] = useState(false);
+  const [newUser, setNewUser] = useState({ username: "", password: "", name: "" });
 
   const handleCreateSubmit = (e) => {
     e.preventDefault();
@@ -27,110 +13,120 @@ export const EmployeesPage = ({ users, onLoadLogs, onCreateUser, loading }) => {
     setShowAddModal(false);
   };
 
-  const filteredEmployees = users
-    .filter(emp =>
-      emp.username.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) => {
-      if (sortBy === "Alphabetical") return a.username.localeCompare(b.username);
-      return 0;
-    });
+  const filtered = users
+    .filter((u) => u.username.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => a.username.localeCompare(b.username));
 
   return (
-    <div className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="p-8 space-y-6 animate-in fade-in duration-500">
+      {/* header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-800">Employee Directory</h1>
-          <p className="text-slate-400 font-medium text-sm mt-1">Dashboard / Employees</p>
+          <h1 className="text-2xl font-black" style={{ color: "var(--text-primary)" }}>Employees</h1>
+          <p className="text-sm font-medium mt-1" style={{ color: "var(--text-secondary)" }}>
+            {users.length} member{users.length !== 1 ? "s" : ""} provisioned
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all">
-            <Download size={18} />
-            <span>Export CSV</span>
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="bg-[#1b6ef3] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95"
-          >
-            <Plus size={18} />
-            <span>Add Member</span>
-          </button>
-        </div>
+        <button onClick={() => setShowAddModal(true)} className="btn-primary h-10 px-4 font-black text-[13px]">
+          <Plus size={15} />
+          Add Employee
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <StatCard label="Total Members" value={users.length} icon={Users} color="text-blue-600" bg="bg-blue-50" />
-        <StatCard label="Active Kiosk" value={users.length} icon={Briefcase} color="text-emerald-600" bg="bg-emerald-50" />
-        <StatCard label="Recent Provision" value="Today" icon={Plus} color="text-purple-600" bg="bg-purple-50" />
-        <StatCard label="System Status" value="Online" icon={Activity} color="text-amber-600" bg="bg-amber-50" />
+      {/* stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Total Members", value: users.length, color: "var(--accent)" },
+          { label: "Active Kiosk",  value: users.length, color: "#22c55e" },
+          { label: "System Status", value: "Online",     color: "#f59e0b" },
+          { label: "Search Results",value: filtered.length, color: "#8b5cf6" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="card p-5">
+            <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: "var(--text-muted)" }}>
+              {label}
+            </p>
+            <p className="text-2xl font-black" style={{ color }}>{value}</p>
+          </div>
+        ))}
       </div>
 
-      <div className="neo-card overflow-hidden">
-        <div className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+      {/* table card */}
+      <div className="card overflow-hidden p-0">
+        {/* search bar */}
+        <div className="px-6 py-4 flex items-center gap-4" style={{ borderBottom: "1px solid var(--border)" }}>
+          <div className="relative flex-1 max-w-sm">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
             <input
               type="text"
-              placeholder="Search members..."
-              className="w-full bg-[#f8fafc] rounded-xl py-3 pl-12 pr-4 outline-none border border-transparent focus:border-blue-100 transition-all text-sm font-medium"
+              placeholder="Search employees..."
+              className="premium-input h-9 pl-9 text-[13px]"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="flex items-center gap-2">
-            <button className="p-3 bg-slate-50 text-slate-500 rounded-xl hover:bg-slate-100 transition-all">
-              <Filter size={18} />
-            </button>
-            <span className="text-sm font-bold text-slate-400 mx-2">Sort by:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-blue-200"
-            >
-              <option>Alphabetical</option>
-              <option>Newest First</option>
-            </select>
-          </div>
+          <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+            {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+          </span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="app-table">
             <thead>
-              <tr className="bg-[#f8fafc] text-slate-400 text-[11px] font-black uppercase tracking-widest">
-                <th className="p-4 px-6">Member</th>
-                <th className="p-4">Created By</th>
-                <th className="p-4">Status</th>
-                <th className="p-4 text-right px-6">Action</th>
+              <tr>
+                <th className="pl-6">Employee</th>
+                <th>Created By</th>
+                <th>Status</th>
+                <th className="text-right pr-6">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filteredEmployees.map((emp) => (
-                <tr key={emp.username} className="group hover:bg-slate-50/50 transition-all cursor-pointer" onClick={() => onLoadLogs(emp.username)}>
-                  <td className="p-5 px-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center font-black text-sm uppercase">
-                        {emp.username.charAt(0)}
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-16 text-center">
+                    <Activity size={28} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
+                    <p className="text-sm font-black" style={{ color: "var(--text-muted)" }}>No employees found</p>
+                  </td>
+                </tr>
+              ) : filtered.map((emp) => (
+                <tr
+                  key={emp.username}
+                  className="cursor-pointer"
+                  onClick={() => onLoadLogs(emp.username)}
+                >
+                  <td className="pl-6">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-[13px] text-white flex-shrink-0"
+                        style={{ background: "var(--accent)" }}
+                      >
+                        {emp.username.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-black text-slate-800">{emp.username}</p>
-                        <p className="text-[10px] font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">Kiosk Access</p>
+                        <p className="text-[13px] font-black" style={{ color: "var(--text-primary)" }}>
+                          {emp.username}
+                        </p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+                          Kiosk Access
+                        </p>
                       </div>
                     </div>
                   </td>
-                  <td className="p-5 text-sm font-bold text-slate-500">
-                    {emp.createdBy}
+                  <td>
+                    <span className="text-[13px] font-bold" style={{ color: "var(--text-secondary)" }}>
+                      {emp.createdBy || "Admin"}
+                    </span>
                   </td>
-                  <td className="p-5">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase bg-green-50 text-green-600`}>
-                      <div className={`w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse`} />
+                  <td>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase"
+                      style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                       Active
                     </span>
                   </td>
-                  <td className="p-5 text-right px-6">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="p-2 inline-flex rounded-lg bg-slate-50 text-slate-400 group-hover:bg-[#1b6ef3] group-hover:text-white transition-all">
-                        <ChevronRight size={18} />
-                      </div>
+                  <td className="text-right pr-6">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all"
+                      style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+                      <ChevronRight size={14} style={{ color: "var(--text-muted)" }} />
                     </div>
                   </td>
                 </tr>
@@ -140,101 +136,72 @@ export const EmployeesPage = ({ users, onLoadLogs, onCreateUser, loading }) => {
         </div>
       </div>
 
-      {/* Add New Member Modal */}
+      {/* add modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-in fade-in duration-200"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+          onClick={() => setShowAddModal(false)}
+        >
           <div
-            className="neo-card w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-300"
+            className="card w-full max-w-md p-8 animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
-                  <UserPlus size={24} />
+            <div className="flex items-center justify-between mb-7">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "var(--accent-light)" }}>
+                  <UserPlus size={18} style={{ color: "var(--accent-text)" }} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-slate-800">Add New Member</h3>
-                  <p className="text-slate-400 text-sm font-medium">Create credentials for kiosk terminal</p>
+                  <h3 className="text-base font-black" style={{ color: "var(--text-primary)" }}>Add Employee</h3>
+                  <p className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>Create kiosk credentials</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-all"
+                className="w-8 h-8 rounded-xl flex items-center justify-center transition-all"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
               >
-                <Plus size={20} className="rotate-45" />
+                <X size={14} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Employee Name</label>
-                <input
-                  type="text"
-                  className="premium-input h-[54px]"
-                  placeholder="Enter employee name"
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  required
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Kiosk Username</label>
-                <input
-                  type="text"
-                  className="premium-input h-[54px]"
-                  placeholder="Enter unique username"
-                  value={newUser.username}
-                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Kiosk Password</label>
-                <input
-                  type="password"
-                  className="premium-input h-[54px]"
-                  placeholder="Enter security password"
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="flex items-center gap-3 pt-4">
+            <form onSubmit={handleCreateSubmit} className="space-y-4">
+              {[
+                { label: "Full Name",     key: "name",     type: "text",     placeholder: "Employee full name" },
+                { label: "Username",      key: "username", type: "text",     placeholder: "Kiosk username" },
+                { label: "Password",      key: "password", type: "password", placeholder: "Secure password" },
+              ].map(({ label, key, type, placeholder }) => (
+                <div key={key} className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest ml-1" style={{ color: "var(--text-muted)" }}>
+                    {label}
+                  </label>
+                  <input
+                    type={type}
+                    placeholder={placeholder}
+                    className="premium-input h-11"
+                    value={newUser[key]}
+                    onChange={(e) => setNewUser({ ...newUser, [key]: e.target.value })}
+                    required
+                  />
+                </div>
+              ))}
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 h-[54px] bg-slate-50 text-slate-500 font-black rounded-xl hover:bg-slate-100 transition-all"
+                  className="btn-ghost flex-1 h-11 font-black text-[13px]"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="flex-[2] premium-btn h-[54px] font-black"
-                  disabled={loading}
-                >
-                  {loading ? "Provisioning..." : "Provision Member"}
+                <button type="submit" disabled={loading} className="btn-primary flex-[2] h-11 font-black text-[13px]">
+                  {loading ? "Provisioning..." : "Provision Employee"}
                 </button>
               </div>
             </form>
           </div>
-          {/* Click backdrop to close */}
-          <div className="absolute inset-0 -z-10" onClick={() => setShowAddModal(false)} />
         </div>
       )}
     </div>
   );
 };
-
-const StatCard = ({ label, value, icon: Icon, color, bg }) => (
-  <div className="neo-card flex items-center gap-5">
-    <div className={`w-14 h-14 ${bg} ${color} rounded-2xl flex items-center justify-center shadow-sm`}>
-      <Icon size={24} />
-    </div>
-    <div>
-      <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-      <p className="text-2xl font-black text-slate-800 mt-0.5">{value}</p>
-    </div>
-  </div>
-);

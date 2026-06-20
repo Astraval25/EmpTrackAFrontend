@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Search,
@@ -6,35 +6,24 @@ import {
   Activity,
   ExternalLink,
   Settings,
-  BarChart3,
   CalendarDays,
   Clock3,
 } from "lucide-react";
 import { adminService } from "../api/adminService";
+import { LogDetailModal } from "../components/LogDetailModal";
+import { parseLogEntry } from "../components/logUtils";
 
 const PAGE_SIZE = 20;
 const EXPORT_PAGE_SIZE = 200;
-const HOURLY_BUCKETS = Array.from({ length: 6 }, (_, index) => {
-  const hour = index * 4;
-  return {
-    label: `${String(hour).padStart(2, "0")}:00`,
-    start: hour,
-    end: hour + 4,
-  };
-});
 
 const sortChronologically = (items) =>
   [...items].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
 const formatDate = (timestamp) =>
-  new Date(timestamp).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
+  new Date(timestamp).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
 
-const formatTime = (timestamp) =>
-  new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const formatTimeFull = (timestamp) =>
+  new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 export const UserLogsPage = ({ username, token, initialLogs = [], onBack }) => {
   const [filterType, setFilterType] = useState("last20");
@@ -48,58 +37,38 @@ export const UserLogsPage = ({ username, token, initialLogs = [], onBack }) => {
   const [exportingLogs, setExportingLogs] = useState(false);
   const [buildingReport, setBuildingReport] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-
   const [showSettings, setShowSettings] = useState(false);
   const [kioskRules, setKioskRules] = useState({
     screenShotEnable: true,
     mouseTrackingEnable: true,
   });
   const [successMsg, setSuccessMsg] = useState("");
+  const [selectedLog, setSelectedLog] = useState(null);
 
-  const scrollContainerRef = useRef(null);
+  const scrollRef = useRef(null);
+  const visibleCountRef = useRef(visibleLogs.length);
 
-  const buildRequestOptions = (offset = 0, limit = PAGE_SIZE) => {
-    const requestOptions = {
-      limit,
-      offset,
-      search: searchQuery.trim(),
-    };
-
+  const buildOptions = useCallback((offset = 0, limit = PAGE_SIZE) => {
+    const options = { limit, offset, search: searchQuery.trim() };
     if (filterType === "custom") {
-      requestOptions.startDate = customDates.start;
-      requestOptions.endDate = customDates.end;
+      options.startDate = customDates.start;
+      options.endDate = customDates.end;
     }
+    return options;
+  }, [searchQuery, filterType, customDates.start, customDates.end]);
 
-    return requestOptions;
-  };
-
-  const fetchLogs = async ({ reset = false } = {}) => {
+  const fetchLogs = useCallback(async ({ reset = false } = {}) => {
     if (!token || !username) return;
-
-    if (reset) {
-      setLoadingLogs(true);
-    } else {
-      setLoadingMore(true);
-    }
+    reset ? setLoadingLogs(true) : setLoadingMore(true);
     setErrorMsg("");
-
     try {
-      const response = await adminService.getLogs(
-        token,
-        username,
-        buildRequestOptions(reset ? 0 : visibleLogs.length, PAGE_SIZE)
-      );
-      const mergedLogs = reset ? response.logs : [...visibleLogs, ...response.logs];
-
-      setVisibleLogs(sortChronologically(mergedLogs));
+      const response = await adminService.getLogs(token, username, buildOptions(reset ? 0 : visibleCountRef.current, PAGE_SIZE));
+      setVisibleLogs((currentVisibleLogs) => sortChronologically(reset ? response.logs : [...currentVisibleLogs, ...response.logs]));
       setTotalLogs(response.total);
       setHasMore(response.hasMore);
-
-      if (reset && scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = 0;
-      }
-    } catch (err) {
-      setErrorMsg(err.message || "Unable to load logs");
+      if (reset && scrollRef.current) scrollRef.current.scrollTop = 0;
+    } catch (error) {
+      setErrorMsg(error.message || "Unable to load logs");
       if (reset) {
         setVisibleLogs([]);
         setTotalLogs(0);
@@ -109,7 +78,7 @@ export const UserLogsPage = ({ username, token, initialLogs = [], onBack }) => {
       setLoadingLogs(false);
       setLoadingMore(false);
     }
-  };
+  }, [token, username, buildOptions]);
 
   useEffect(() => {
     setVisibleLogs(sortChronologically(initialLogs));
@@ -118,507 +87,450 @@ export const UserLogsPage = ({ username, token, initialLogs = [], onBack }) => {
   }, [initialLogs]);
 
   useEffect(() => {
-    if (!showSettings) {
-      fetchLogs({ reset: true });
-    }
-  }, [username, token, filterType, customDates.start, customDates.end, searchQuery, showSettings]);
+    visibleCountRef.current = visibleLogs.length;
+  }, [visibleLogs.length]);
 
-  const handleLogScroll = () => {
-    const container = scrollContainerRef.current;
-    if (!container || filterType !== "custom" || loadingLogs || loadingMore || !hasMore) {
-      return;
-    }
+  useEffect(() => {
+    if (!showSettings) fetchLogs({ reset: true });
+  }, [username, token, filterType, customDates.start, customDates.end, searchQuery, showSettings, fetchLogs]);
 
-    const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (remaining < 120) {
+  const handleScroll = () => {
+    const container = scrollRef.current;
+    if (!container || filterType !== "custom" || loadingLogs || loadingMore || !hasMore) return;
+    if (container.scrollHeight - container.scrollTop - container.clientHeight < 120) {
       fetchLogs();
     }
   };
 
-  const graphData = useMemo(() => {
-    const buckets = HOURLY_BUCKETS.map((bucket) => {
-      const count = visibleLogs.filter((log) => {
-        const hour = new Date(log.timestamp).getHours();
-        return hour >= bucket.start && hour < bucket.end;
-      }).length;
-
-      return {
-        ...bucket,
-        count,
-      };
-    });
-
-    const peak = Math.max(...buckets.map((item) => item.count), 1);
-    return { buckets, peak };
-  }, [visibleLogs]);
-
   const summary = useMemo(() => {
-    const firstLog = visibleLogs[0] || null;
-    const lastLog = visibleLogs[visibleLogs.length - 1] || null;
-    const uniqueDays = new Set(
-      visibleLogs.map((log) => new Date(log.timestamp).toDateString())
-    ).size;
-
+    const uniqueDays = new Set(visibleLogs.map((log) => new Date(log.timestamp).toDateString())).size;
     return {
-      firstLog,
-      lastLog,
+      firstLog: visibleLogs[0] || null,
+      lastLog: visibleLogs[visibleLogs.length - 1] || null,
       uniqueDays,
     };
   }, [visibleLogs]);
 
-  const downloadCsv = (rows, fileName) => {
-    const encodedUri = encodeURI(`data:text/csv;charset=utf-8,${rows.join("\n")}`);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", fileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const downloadCsv = (rows, name) => {
+    const anchor = document.createElement("a");
+    anchor.href = encodeURI(`data:text/csv;charset=utf-8,${rows.join("\n")}`);
+    anchor.download = name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
   };
 
-  const fetchAllMatchingLogs = async () => {
-    const allLogs = [];
+  const fetchAll = async () => {
+    const all = [];
     let offset = 0;
-    let nextHasMore = true;
-
-    while (nextHasMore) {
-      const response = await adminService.getLogs(
-        token,
-        username,
-        buildRequestOptions(offset, EXPORT_PAGE_SIZE)
-      );
-
-      allLogs.push(...response.logs);
+    let more = true;
+    while (more) {
+      const response = await adminService.getLogs(token, username, buildOptions(offset, EXPORT_PAGE_SIZE));
+      all.push(...response.logs);
       offset += response.logs.length;
-      nextHasMore = response.hasMore;
-
-      if (response.logs.length === 0) {
-        nextHasMore = false;
-      }
+      more = response.hasMore && response.logs.length > 0;
     }
-
-    return sortChronologically(allLogs);
+    return sortChronologically(all);
   };
 
   const handleDownloadReport = async () => {
-    if (visibleLogs.length === 0) return;
-
+    if (!visibleLogs.length) return;
     setBuildingReport(true);
     try {
       const rows = [
         "Metric,Value",
         `"Username","${username}"`,
-        `"Filter Type","${filterType === "last20" ? "Last 20" : "Custom Range"}"`,
+        `"Filter","${filterType === "last20" ? "Last 20" : "Custom Range"}"`,
         `"Visible Logs","${visibleLogs.length}"`,
-        `"Matching Database Logs","${totalLogs}"`,
+        `"Total Logs","${totalLogs}"`,
         `"Active Days","${summary.uniqueDays}"`,
-        `"First Visible Log","${summary.firstLog ? `${formatDate(summary.firstLog.timestamp)} ${formatTime(summary.firstLog.timestamp)}` : "-"}"`,
-        `"Last Visible Log","${summary.lastLog ? `${formatDate(summary.lastLog.timestamp)} ${formatTime(summary.lastLog.timestamp)}` : "-"}"`,
-        `"Search Query","${searchQuery || "-"}"`,
-        `"Start Date","${customDates.start || "-"}"`,
-        `"End Date","${customDates.end || "-"}"`,
         "",
-        "Activity,Timestamp",
-        ...visibleLogs.map((log) => `"${log.activity.replace(/"/g, '""')}","${new Date(log.timestamp).toISOString()}"`),
+        "Activity,Date,Time",
+        ...visibleLogs.map((log) => {
+          const { activityName, timestamp } = parseLogEntry(log);
+          return `"${activityName.replace(/"/g, '""')}","${formatDate(timestamp)}","${formatTimeFull(timestamp)}"`;
+        }),
       ];
-
-      downloadCsv(rows, `${username}_activity_report.csv`);
+      downloadCsv(rows, `${username}_report.csv`);
     } finally {
       setBuildingReport(false);
     }
   };
 
-  const handleExportLogs = async () => {
-    if (!token || !username || totalLogs === 0) return;
-
+  const handleExport = async () => {
+    if (!token || !username || !totalLogs) return;
     setExportingLogs(true);
     try {
-      const allMatchingLogs = await fetchAllMatchingLogs();
+      const all = await fetchAll();
       const rows = [
-        "Activity,Timestamp",
-        ...allMatchingLogs.map((log) => `"${log.activity.replace(/"/g, '""')}","${new Date(log.timestamp).toISOString()}"`),
+        "Activity,Date,Time",
+        ...all.map((log) => {
+          const { activityName, timestamp } = parseLogEntry(log);
+          return `"${activityName.replace(/"/g, '""')}","${formatDate(timestamp)}","${formatTimeFull(timestamp)}"`;
+        }),
       ];
-
-      downloadCsv(rows, `${username}_exact_logs.csv`);
-    } catch (err) {
-      setErrorMsg(err.message || "Unable to export logs");
+      downloadCsv(rows, `${username}_logs.csv`);
+    } catch (error) {
+      setErrorMsg(error.message || "Export failed");
     } finally {
       setExportingLogs(false);
     }
   };
 
   const handleSaveRules = () => {
-    setSuccessMsg("Kiosk security policies updated successfully for " + username + "!");
+    setSuccessMsg(`Rules updated for ${username}`);
     setTimeout(() => {
       setSuccessMsg("");
       setShowSettings(false);
     }, 2000);
   };
 
+  const S = {
+    card: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "1rem" },
+    surface2: { background: "var(--surface-2)", border: "1px solid var(--border)" },
+    textPrimary: { color: "var(--text-primary)" },
+    textMuted: { color: "var(--text-muted)" },
+    textSecondary: { color: "var(--text-secondary)" },
+    accent: { background: "var(--accent)", color: "#fff" },
+  };
+
   return (
-    <div className="p-8 space-y-8 animate-in slide-in-from-right-8 duration-700">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-5">
+    <div className="p-8 space-y-6 animate-in fade-in duration-500">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-4">
           <button
             onClick={onBack}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-400 hover:text-blue-600 hover:shadow-lg transition-all"
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
+            style={{ ...S.surface2, color: "var(--text-secondary)" }}
           >
-            <ArrowLeft size={24} />
+            <ArrowLeft size={18} />
           </button>
           <div>
-            <h1 className="text-2xl font-black text-slate-800">Activity History</h1>
-            <div className="flex items-center gap-2 text-slate-400 font-bold text-sm mt-1">
+            <h1 className="text-xl font-black" style={S.textPrimary}>
+              Activity History
+            </h1>
+            <div className="flex items-center gap-2 text-xs font-bold mt-0.5" style={S.textMuted}>
               <span>{username}</span>
-              <div className="w-1 h-1 rounded-full bg-slate-200" />
-              <span>{showSettings ? "Kiosk Configuration" : "Exact User Logs"}</span>
+              <span>-</span>
+              <span>{showSettings ? "Kiosk Configuration" : `${totalLogs} logs`}</span>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all border ${
-              showSettings
-                ? "border-slate-800 bg-[#1e293b] text-white shadow-lg"
-                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-            }`}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all"
+            style={showSettings ? S.accent : { ...S.surface2, color: "var(--text-secondary)" }}
           >
-            <Settings size={18} />
-            <span>Kiosk Rules</span>
+            <Settings size={15} />
+            Kiosk Rules
           </button>
-
           <button
             onClick={handleDownloadReport}
-            disabled={visibleLogs.length === 0 || buildingReport}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!visibleLogs.length || buildingReport}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-40"
+            style={{ ...S.surface2, color: "var(--text-secondary)" }}
           >
-            <Download size={18} />
-            <span>{buildingReport ? "Building..." : "Report"}</span>
+            <Download size={15} />
+            {buildingReport ? "Building..." : "Report"}
           </button>
           <button
-            onClick={handleExportLogs}
-            disabled={totalLogs === 0 || exportingLogs}
-            className="bg-[#1b6ef3] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleExport}
+            disabled={!totalLogs || exportingLogs}
+            className="btn-primary px-4 py-2 text-sm disabled:opacity-40"
           >
-            <ExternalLink size={18} />
-            <span>{exportingLogs ? "Exporting..." : "Export Logs"}</span>
+            <ExternalLink size={15} />
+            {exportingLogs ? "Exporting..." : "Export"}
           </button>
         </div>
       </div>
 
       {!showSettings && (
-        <>
-          <div className="neo-card p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-xl font-black text-blue-600 shadow-md">
-                {username.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-800 leading-none">{username}</h3>
-                <p className="text-xs font-bold text-slate-400 mt-1.5 uppercase tracking-widest">Exact | {totalLogs} Logs</p>
-              </div>
+        <div className="p-4 rounded-2xl grid grid-cols-1 lg:grid-cols-3 gap-4 items-center" style={S.card}>
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-white text-sm flex-shrink-0" style={S.accent}>
+              {username.charAt(0).toUpperCase()}
             </div>
-
-            <div className="flex items-center gap-2 bg-[#f8fafc] p-1.5 rounded-2xl border border-slate-100 self-center justify-self-start lg:justify-self-center">
-              <button
-                onClick={() => setFilterType("last20")}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
-                  filterType === "last20" ? "bg-[#1b6ef3] text-white shadow-md shadow-blue-500/10" : "text-slate-400 hover:text-slate-600"
-                }`}
-              >
-                Last 20
-              </button>
-              <button
-                onClick={() => setFilterType("custom")}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
-                  filterType === "custom" ? "bg-[#1b6ef3] text-white shadow-md shadow-blue-500/10" : "text-slate-400 hover:text-slate-600"
-                }`}
-              >
-                Custom Range
-              </button>
-            </div>
-
-            <div className="relative w-full">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="Search exact activities..."
-                className="w-full bg-slate-50 rounded-xl py-3 pl-12 pr-4 text-sm font-bold outline-none border border-transparent focus:border-blue-100"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+            <div>
+              <p className="text-[13px] font-black" style={S.textPrimary}>
+                {username}
+              </p>
+              <p className="text-[10px] font-black uppercase tracking-widest" style={S.textMuted}>
+                {totalLogs} logs
+              </p>
             </div>
           </div>
 
-          {!showSettings && filterType === "custom" && (
-            <div className="neo-card p-6 grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-top-3 duration-300">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Start Date</label>
-                <input
-                  type="date"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 px-4 text-sm font-bold outline-none focus:border-blue-500"
-                  value={customDates.start}
-                  onChange={(e) => setCustomDates({ ...customDates, start: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">End Date</label>
-                <input
-                  type="date"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 px-4 text-sm font-bold outline-none focus:border-blue-500"
-                  value={customDates.end}
-                  onChange={(e) => setCustomDates({ ...customDates, end: e.target.value })}
-                />
-              </div>
-            </div>
-          )}
+          <div className="flex items-center gap-1 p-1 rounded-xl self-center" style={S.surface2}>
+            {["last20", "custom"].map((option) => (
+              <button
+                key={option}
+                onClick={() => setFilterType(option)}
+                className="flex-1 px-3 py-1.5 rounded-lg text-xs font-black transition-all"
+                style={filterType === option ? S.accent : { color: "var(--text-muted)", background: "transparent" }}
+              >
+                {option === "last20" ? "Last 20" : "Custom Range"}
+              </button>
+            ))}
+          </div>
 
-        </>
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={S.textMuted} />
+            <input
+              type="text"
+              placeholder="Search activities..."
+              className="premium-input h-9 pl-9 text-[13px]"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
+      {!showSettings && filterType === "custom" && (
+        <div className="p-5 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-4 animate-in slide-in-from-top-3 duration-300" style={S.card}>
+          {["start", "end"].map((key) => (
+            <div key={key} className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest ml-1" style={S.textMuted}>
+                {key === "start" ? "Start Date" : "End Date"}
+              </label>
+              <input
+                type="date"
+                className="premium-input h-10"
+                value={customDates[key]}
+                onChange={(event) => setCustomDates({ ...customDates, [key]: event.target.value })}
+              />
+            </div>
+          ))}
+        </div>
       )}
 
       {showSettings ? (
-        <div className="neo-card p-8 space-y-8 animate-in fade-in duration-500">
+        <div className="p-7 rounded-2xl space-y-6 animate-in fade-in duration-300" style={S.card}>
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-xl font-black text-slate-800">Kiosk Monitoring Configuration</h3>
-              <p className="text-slate-400 font-bold text-xs mt-1">Configure active terminal monitoring rules for {username}</p>
+              <h3 className="text-base font-black" style={S.textPrimary}>
+                Kiosk Monitoring Rules
+              </h3>
+              <p className="text-xs font-medium mt-0.5" style={S.textMuted}>
+                Configure monitoring for {username}
+              </p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-sm" style={S.accent}>
               {username.charAt(0).toUpperCase()}
             </div>
           </div>
 
           {successMsg && (
-            <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-black uppercase tracking-wider text-center animate-in slide-in-from-top-2 duration-350">
+            <div
+              className="rounded-xl py-3 px-4 text-center text-xs font-black uppercase tracking-widest"
+              style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}
+            >
               {successMsg}
             </div>
           )}
 
-          <div className="space-y-6">
-            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-blue-100 transition-all">
-              <div>
-                <p className="text-sm font-black text-slate-700">Screen Capture Capture Stream</p>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">Captures desktop screenshot immediately upon terminal unlocks</p>
+          <div className="space-y-3">
+            {[
+              { key: "screenShotEnable", label: "Screen Capture Stream", desc: "Captures screenshot on terminal unlock" },
+              { key: "mouseTrackingEnable", label: "Mouse Movement Telemetry", desc: "Records mouse paths and click coordinates" },
+            ].map(({ key, label, desc }) => (
+              <div key={key} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl" style={S.surface2}>
+                <div>
+                  <p className="text-[13px] font-black" style={S.textPrimary}>
+                    {label}
+                  </p>
+                  <p className="text-[11px] font-medium mt-0.5" style={S.textMuted}>
+                    {desc}
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={kioskRules[key]}
+                  onChange={(event) => setKioskRules({ ...kioskRules, [key]: event.target.checked })}
+                  className="w-4 h-4 cursor-pointer accent-indigo-500"
+                />
               </div>
-              <input
-                type="checkbox"
-                checked={kioskRules.screenShotEnable}
-                onChange={(e) => setKioskRules({ ...kioskRules, screenShotEnable: e.target.checked })}
-                className="w-5 h-5 rounded border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-            </div>
-
-            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-blue-100 transition-all">
-              <div>
-                <p className="text-sm font-black text-slate-700">Mouse Movement Telemetry</p>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">Records mouse tracking speed, click paths, and coordinates</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={kioskRules.mouseTrackingEnable}
-                onChange={(e) => setKioskRules({ ...kioskRules, mouseTrackingEnable: e.target.checked })}
-                className="w-5 h-5 rounded border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-            </div>
+            ))}
           </div>
 
-          <div className="flex items-center gap-4 pt-4 border-t border-slate-100">
-            <button
-              onClick={handleSaveRules}
-              className="bg-[#1b6ef3] text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95"
-            >
-              <span>Save Kiosk Rules</span>
+          <div className="flex gap-3 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+            <button onClick={handleSaveRules} className="btn-primary px-6 py-2.5 font-black text-sm">
+              Save Rules
             </button>
-            <button
-              onClick={() => setShowSettings(false)}
-              className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
-            >
-              <span>Cancel</span>
+            <button onClick={() => setShowSettings(false)} className="btn-ghost px-6 py-2.5 font-black text-sm">
+              Cancel
             </button>
           </div>
         </div>
       ) : (
-        <>
-          <div className="neo-card p-0 overflow-hidden">
-            <div className="p-8 border-b border-slate-50 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-black text-slate-800">Complete Activity Trail</h3>
-                <p className="text-slate-400 font-bold text-xs mt-1">
-                  {filterType === "last20"
-                    ? "Viewing the latest 20 exact logs in time order"
-                    : `Viewing ${visibleLogs.length} of ${totalLogs} matching exact logs`}
-                </p>
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+          <div className="xl:col-span-8">
+            <div className="rounded-2xl overflow-hidden" style={S.card}>
+              <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
+                <div>
+                  <h3 className="text-[13px] font-black" style={S.textPrimary}>
+                    Complete Activity Trail
+                  </h3>
+                  <p className="text-[10px] font-black uppercase tracking-widest mt-0.5" style={S.textMuted}>
+                    {filterType === "last20" ? "Latest 20 logs in time order" : `${visibleLogs.length} of ${totalLogs} matching logs`}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            <div className="p-8">
-              {loadingLogs ? (
-                <div className="py-20 text-center animate-in fade-in duration-300">
-                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-200 mx-auto mb-4 animate-pulse">
-                    <Activity size={32} />
-                  </div>
-                  <p className="text-slate-400 font-bold text-sm">Loading activity records...</p>
-                </div>
-              ) : errorMsg ? (
-                <div className="py-20 text-center animate-in fade-in duration-300">
-                  <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center text-rose-300 mx-auto mb-4">
-                    <Activity size={32} />
-                  </div>
-                  <p className="text-rose-500 font-bold text-sm">{errorMsg}</p>
-                </div>
-              ) : visibleLogs.length === 0 ? (
-                <div className="py-20 text-center animate-in fade-in duration-300">
-                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-200 mx-auto mb-4">
-                    <Activity size={32} />
-                  </div>
-                  <p className="text-slate-400 font-bold text-sm">No activity records found matching filters.</p>
-                </div>
-              ) : (
-                <div
-                  ref={scrollContainerRef}
-                  onScroll={handleLogScroll}
-                  className="overflow-auto max-h-[560px]"
-                >
-                  <table className="w-full border-collapse text-left table-fixed">
-                    <thead>
-                      <tr className="border-b border-slate-100">
-                        <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest pl-6 w-7/12">Activity Name</th>
-                        <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-3/12">Date</th>
-                        <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-2/12 text-right pr-6">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {visibleLogs.map((log, i) => (
-                        <tr
-                          key={`${log.timestamp}-${i}`}
-                          className="hover:bg-slate-50/50 transition-colors group animate-in slide-in-from-bottom-2 duration-300"
-                          style={{ animationDelay: `${i * 20}ms` }}
-                        >
-                          <td className="py-4 pl-6 font-black text-slate-800 text-sm w-7/12">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                                {log.activity.charAt(0).toUpperCase()}
-                              </div>
-                              <span className="truncate max-w-[200px] sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl" title={log.activity}>
-                                {log.activity}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-4 text-xs font-bold text-slate-400 w-3/12 whitespace-nowrap">
-                            {new Date(log.timestamp).toLocaleDateString(undefined, {
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                            })}
-                          </td>
-                          <td className="py-4 text-xs font-black text-slate-500 w-2/12 text-right pr-6 whitespace-nowrap">
-                            {new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {filterType === "custom" && (
-                    <div className="px-6 py-4 border-t border-slate-100 text-center">
-                      {loadingMore ? (
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading more logs...</p>
-                      ) : hasMore ? (
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Scroll to load more exact logs</p>
-                      ) : (
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">All matching exact logs loaded</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-            <div className="xl:col-span-8">
-              <div className="neo-card p-8 h-full">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.26em] text-slate-400">Activity Graph</p>
-                    <h3 className="mt-2 text-xl font-black text-slate-800">Log activity distribution</h3>
-                    <p className="mt-2 text-sm font-medium text-slate-500">
-                      Graph uses the exact logs currently shown on this page.
+              <div ref={scrollRef} onScroll={handleScroll} className="overflow-auto max-h-[520px]">
+                {loadingLogs ? (
+                  <div className="py-20 text-center">
+                    <Activity size={28} className="mx-auto mb-3 animate-pulse" style={S.textMuted} />
+                    <p className="text-sm font-bold" style={S.textMuted}>
+                      Loading logs...
                     </p>
                   </div>
-                  <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                    <BarChart3 size={22} />
+                ) : errorMsg ? (
+                  <div className="py-20 text-center">
+                    <p className="text-sm font-bold text-red-400">{errorMsg}</p>
                   </div>
-                </div>
+                ) : visibleLogs.length === 0 ? (
+                  <div className="py-20 text-center">
+                    <Activity size={28} className="mx-auto mb-3" style={S.textMuted} />
+                    <p className="text-sm font-bold" style={S.textMuted}>
+                      No activity records found.
+                    </p>
+                  </div>
+                ) : (
+                  <table className="w-full border-collapse text-left table-fixed">
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                        <th className="pb-3 pt-4 text-[10px] font-black uppercase tracking-widest pl-6 w-7/12" style={S.textMuted}>
+                          Activity Name
+                        </th>
+                        <th className="pb-3 pt-4 text-[10px] font-black uppercase tracking-widest w-3/12" style={S.textMuted}>
+                          Date
+                        </th>
+                        <th className="pb-3 pt-4 text-[10px] font-black uppercase tracking-widest w-2/12 text-right pr-6" style={S.textMuted}>
+                          Time
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleLogs.map((log, index) => {
+                        const { activityName, timestamp } = parseLogEntry(log);
+                        const dateValue = new Date(timestamp);
+                        return (
+                          <tr
+                            key={`${timestamp}-${index}`}
+                            className="cursor-pointer transition-colors"
+                            onClick={() => setSelectedLog(log)}
+                            style={{ borderBottom: "1px solid var(--border)" }}
+                            onMouseEnter={(event) => {
+                              event.currentTarget.style.background = "var(--accent-light)";
+                            }}
+                            onMouseLeave={(event) => {
+                              event.currentTarget.style.background = "transparent";
+                            }}
+                          >
+                            <td className="py-3 pl-6 text-sm font-black" style={S.textPrimary}>
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className="w-7 h-7 rounded-lg flex items-center justify-center font-black text-[11px] flex-shrink-0"
+                                  style={{ background: "var(--accent-light)", color: "var(--accent-text)" }}
+                                >
+                                  {activityName.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="truncate" title={activityName}>
+                                  {activityName}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3 text-xs font-bold whitespace-nowrap" style={S.textMuted}>
+                              {Number.isNaN(dateValue.getTime()) ? "—" : formatDate(timestamp)}
+                            </td>
+                            <td className="py-3 text-xs font-black text-right pr-6 whitespace-nowrap" style={S.textSecondary}>
+                              {Number.isNaN(dateValue.getTime()) ? "—" : formatTimeFull(timestamp)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
 
-                <div className="mt-8 grid grid-cols-6 items-end gap-3 rounded-[28px] bg-slate-50 p-6">
-                  {graphData.buckets.map((item) => {
-                    const height = Math.max((item.count / graphData.peak) * 180, item.count > 0 ? 30 : 10);
-                    return (
-                      <div key={item.label} className="flex flex-col items-center gap-3">
-                        <span className="text-xs font-black text-slate-500">{item.count}</span>
-                        <div className="flex h-48 w-full items-end justify-center rounded-2xl bg-white px-2 py-3 shadow-sm">
-                          <div
-                            className="w-full rounded-xl bg-gradient-to-t from-blue-600 via-sky-500 to-cyan-300"
-                            style={{ height: `${height}px` }}
-                            title={`${item.label} - ${item.count} logs`}
-                          />
-                        </div>
-                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">{item.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="xl:col-span-4">
-              <div className="neo-card p-8 h-full">
-                <p className="text-[11px] font-black uppercase tracking-[0.26em] text-slate-400">Log Summary</p>
-                <h3 className="mt-2 text-xl font-black text-slate-800">Clean exact activity overview</h3>
-
-                <div className="mt-6 space-y-4">
-                  <SummaryRow icon={Activity} label="Matching Logs" value={String(totalLogs)} />
-                  <SummaryRow icon={CalendarDays} label="Active Days" value={String(summary.uniqueDays)} />
-                  <SummaryRow icon={Clock3} label="Visible Logs" value={String(visibleLogs.length)} />
-                </div>
-
-                <div className="mt-6 rounded-[28px] bg-slate-50 p-5 border border-slate-100">
-                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">First Visible Log</p>
-                  <p className="mt-2 text-sm font-black text-slate-800">
-                    {summary.firstLog ? summary.firstLog.activity : "No log"}
-                  </p>
-                  <p className="mt-1 text-xs font-bold text-slate-400">
-                    {summary.firstLog ? `${formatDate(summary.firstLog.timestamp)} at ${formatTime(summary.firstLog.timestamp)}` : "-"}
-                  </p>
-                </div>
-
-                <div className="mt-4 rounded-[28px] bg-slate-50 p-5 border border-slate-100">
-                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">Last Visible Log</p>
-                  <p className="mt-2 text-sm font-black text-slate-800">
-                    {summary.lastLog ? summary.lastLog.activity : "No log"}
-                  </p>
-                  <p className="mt-1 text-xs font-bold text-slate-400">
-                    {summary.lastLog ? `${formatDate(summary.lastLog.timestamp)} at ${formatTime(summary.lastLog.timestamp)}` : "-"}
-                  </p>
-                </div>
+                {filterType === "custom" && (
+                  <div className="px-6 py-3 text-center" style={{ borderTop: "1px solid var(--border)" }}>
+                    <p className="text-[10px] font-black uppercase tracking-widest" style={S.textMuted}>
+                      {loadingMore ? "Loading more..." : hasMore ? "Scroll to load more" : "All logs loaded"}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
-        </>
+
+          <div className="xl:col-span-4">
+            <div className="rounded-2xl p-6 space-y-5" style={S.card}>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest" style={S.textMuted}>
+                  Log Summary
+                </p>
+                <h3 className="text-base font-black mt-1" style={S.textPrimary}>
+                  Activity Overview
+                </h3>
+              </div>
+
+              <div className="space-y-3">
+                <SummaryRow icon={Activity} label="Total Logs" value={String(totalLogs)} />
+                <SummaryRow icon={CalendarDays} label="Active Days" value={String(summary.uniqueDays)} />
+                <SummaryRow icon={Clock3} label="Visible Logs" value={String(visibleLogs.length)} />
+              </div>
+
+              <div className="space-y-3">
+                <LogSnippet label="First Log" entry={summary.firstLog ? parseLogEntry(summary.firstLog) : null} />
+                <LogSnippet label="Latest Log" entry={summary.lastLog ? parseLogEntry(summary.lastLog) : null} />
+              </div>
+            </div>
+          </div>
+        </div>
       )}
+
+      <LogDetailModal log={selectedLog} onClose={() => setSelectedLog(null)} />
     </div>
   );
 };
 
-const SummaryRow = ({ icon: Icon, label, value }) => (
-  <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 px-4 py-3">
+const SummaryRow = ({ icon, label, value }) => (
+  <div
+    className="flex items-center justify-between gap-4 rounded-xl px-4 py-3"
+    style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+  >
     <div className="flex items-center gap-3">
-      <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-        <Icon size={18} />
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--accent-light)", color: "var(--accent-text)" }}>
+        {createElement(icon, { size: 15 })}
       </div>
-      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">{label}</p>
+      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+        {label}
+      </p>
     </div>
-    <p className="text-sm font-black text-slate-900">{value}</p>
+    <p className="text-sm font-black" style={{ color: "var(--text-primary)" }}>
+      {value}
+    </p>
   </div>
 );
+
+const LogSnippet = ({ label, entry }) => (
+  <div className="rounded-xl px-4 py-3" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+    <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: "var(--text-muted)" }}>
+      {label}
+    </p>
+    <p className="text-[13px] font-black truncate" style={{ color: "var(--text-primary)" }}>
+      {entry ? entry.activityName : "No log"}
+    </p>
+    {entry && (
+      <p className="text-[10px] font-bold mt-0.5" style={{ color: "var(--text-muted)" }}>
+        {new Date(entry.timestamp).toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })} {" - "}
+        {new Date(entry.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+      </p>
+    )}
+  </div>
+);
+

@@ -1,23 +1,23 @@
-import { useEffect } from "react";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { CheckCircle2, AlertCircle, X } from "lucide-react";
 
-export const Toast = ({ message, type, onClose }) => {
-  useEffect(() => {
-    if (message) {
-      const timer = setTimeout(() => onClose(), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [message, onClose]);
-
+export const Toast = ({ message, type }) => {
   if (!message) return null;
-
   const isError = type === "error";
+
   return (
-    <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl transition-all duration-500 z-50 animate-in slide-in-from-bottom-5 fade-in ${
-      isError ? "bg-red-50 text-red-700 border border-red-200" : "bg-teal-50 text-teal-800 border border-teal-200"
-    }`}>
-      {isError ? <AlertCircle className="w-5 h-5 text-red-500" /> : <CheckCircle2 className="w-5 h-5 text-teal-500" />}
-      <span className="font-medium">{message}</span>
+    <div
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl animate-in slide-in-from-bottom-4 fade-in duration-300"
+      style={{
+        background: isError ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)",
+        border: `1px solid ${isError ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`,
+        backdropFilter: "blur(12px)",
+        color: isError ? "#f87171" : "#4ade80",
+      }}
+    >
+      {isError
+        ? <AlertCircle size={16} />
+        : <CheckCircle2 size={16} />}
+      <span className="text-sm font-black">{message}</span>
     </div>
   );
 };

@@ -1,78 +1,97 @@
-import { Shield, Key } from "lucide-react";
+import { Mail, Shield, Clock, CheckCircle } from "lucide-react";
 
 export const ProfilePage = ({ loggedInAdmin, companyName }) => {
+  const initial = loggedInAdmin ? loggedInAdmin.charAt(0).toUpperCase() : "A";
+  const joinedDate = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+
   return (
-    <div className="p-8 space-y-8 animate-in fade-in duration-700">
+    <div className="p-8 space-y-6 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-2xl font-black text-slate-800">Admin Profile</h1>
-        <p className="text-slate-400 font-medium text-sm mt-1">Manage your active administrator credentials</p>
+        <h1 className="text-2xl font-black" style={{ color: "var(--text-primary)" }}>Profile</h1>
+        <p className="text-sm font-medium mt-1" style={{ color: "var(--text-secondary)" }}>
+          Your active administrator account
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Profile Card */}
-        <div className="xl:col-span-1">
-          <div className="neo-card p-8 flex flex-col items-center text-center">
-            <div className="w-24 h-24 rounded-[32px] bg-blue-100 border-4 border-white shadow-xl flex items-center justify-center text-3xl font-black text-blue-600 mb-6">
-              {loggedInAdmin ? loggedInAdmin.charAt(0).toUpperCase() : "A"}
-            </div>
-            <h3 className="text-xl font-black text-slate-800">{loggedInAdmin || "Administrator"}</h3>
-            <span className="mt-2 px-3 py-1 bg-blue-50 text-blue-600 text-xs font-black rounded-full uppercase tracking-wider">
-              Super Admin
-            </span>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-            <div className="w-full border-t border-slate-100 mt-8 pt-6 space-y-4 text-left">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-bold text-slate-400">Company</span>
-                <span className="font-black text-slate-700">{companyName}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-bold text-slate-400">Role</span>
-                <span className="font-black text-slate-700">Workspace Master</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-bold text-slate-400">Status</span>
-                <span className="font-black text-emerald-500">Connected</span>
-              </div>
-            </div>
+        {/* avatar card */}
+        <div className="card p-8 flex flex-col items-center text-center">
+          <div
+            className="w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-black text-white mb-5 shadow-lg"
+            style={{ background: "linear-gradient(135deg, var(--accent), #8b5cf6)" }}
+          >
+            {initial}
+          </div>
+          <h3 className="text-lg font-black" style={{ color: "var(--text-primary)" }}>
+            {loggedInAdmin || "Administrator"}
+          </h3>
+          <span className="badge-accent mt-2">Super Admin</span>
+
+          <div className="w-full mt-6 pt-6 space-y-3 text-left" style={{ borderTop: "1px solid var(--border)" }}>
+            <InfoRow label="Role" value="Workspace Administrator" />
+            <InfoRow label="Company" value={companyName || "—"} />
+            <InfoRow label="Status" value="Active" valueColor="#22c55e" />
           </div>
         </div>
 
-        {/* Security & Access Details */}
-        <div className="xl:col-span-2 space-y-8">
-          <div className="neo-card p-8">
-            <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
-              <Shield size={20} className="text-blue-500" />
-              <span>Workspace Authorization Details</span>
+        {/* account details */}
+        <div className="xl:col-span-2 space-y-4">
+          <div className="card p-7">
+            <h3 className="text-base font-black mb-5 flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+              <Mail size={17} style={{ color: "var(--accent-text)" }} />
+              Account Information
             </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-[#f8fafc] p-6 rounded-2xl border border-slate-50">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Workspace Administrator</p>
-                <p className="text-base font-black text-slate-800 mt-1">{loggedInAdmin}</p>
-              </div>
-              <div className="bg-[#f8fafc] p-6 rounded-2xl border border-slate-50">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assigned Organization</p>
-                <p className="text-base font-black text-slate-800 mt-1">{companyName}</p>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <DetailBlock label="Email Address" value={loggedInAdmin || "—"} />
+              <DetailBlock label="Account Type" value="Administrator" />
+              <DetailBlock label="Organisation" value={companyName || "—"} />
+              <DetailBlock label="Session" value="Active & Authenticated" />
             </div>
+          </div>
 
-            <div className="bg-[#f8fafc] p-6 rounded-2xl border border-slate-50 mt-6 flex items-start gap-4">
-              <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 flex-shrink-0">
-                <Key size={18} />
-              </div>
-              <div className="flex-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Workspace Security Hash</p>
-                <p className="text-xs font-mono font-bold text-slate-600 mt-1.5 break-all">
-                  scrypt:32768:8:1$PBKDF2-Scrypt-Active-Auth-Session-Key
-                </p>
-                <p className="text-[10px] text-slate-400 mt-2 font-medium">
-                  Authentication hashes generated on our server are 100% backward-compatible with local kiosk validation nodes.
-                </p>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatCard icon={Shield} label="Access Level" value="Full Access" color="#6366f1" />
+            <StatCard icon={CheckCircle} label="Account Status" value="Verified" color="#22c55e" />
+            <StatCard icon={Clock} label="Session" value="Live" color="#f59e0b" />
           </div>
         </div>
       </div>
     </div>
   );
 };
+
+const InfoRow = ({ label, value, valueColor }) => (
+  <div className="flex items-center justify-between gap-2">
+    <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+      {label}
+    </span>
+    <span className="text-[13px] font-black" style={{ color: valueColor || "var(--text-primary)" }}>
+      {value}
+    </span>
+  </div>
+);
+
+const DetailBlock = ({ label, value }) => (
+  <div className="rounded-xl p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+    <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: "var(--text-muted)" }}>
+      {label}
+    </p>
+    <p className="text-[13px] font-black" style={{ color: "var(--text-primary)" }}>{value}</p>
+  </div>
+);
+
+const StatCard = ({ icon: Icon, label, value, color }) => (
+  <div className="card p-5 flex items-center gap-4">
+    <div
+      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+      style={{ background: `${color}18` }}
+    >
+      <Icon size={18} style={{ color }} />
+    </div>
+    <div>
+      <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>{label}</p>
+      <p className="text-[13px] font-black mt-0.5" style={{ color: "var(--text-primary)" }}>{value}</p>
+    </div>
+  </div>
+);

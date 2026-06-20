@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
@@ -18,3 +18,6 @@ If you are developing a production application, we recommend using TypeScript wi
 =======
 # EmpTrackAITrackers
 >>>>>>> 793c3cbe83d7a920213cc71312587e311a385c25
+=======
+# EmpTrackAFrontend
+>>>>>>> e9322c7e69ca2d359e9347261db81a56dfdea36b
